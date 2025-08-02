@@ -5,28 +5,19 @@ import joblib
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-# Título de la app
-st.title("Predicción de la Nota Final del Estudiante")
+st.set_page_config(page_title="Predicción de Notas", layout="centered")
 
-# Cargar el modelo
+st.title("🎓 Predicción de la Nota Final del Estudiante")
+
+# Cargar el modelo y dataset
 modelo = joblib.load("modelo_entrenado.pkl")
-
-# Cargar dataset para estadísticas
 df = pd.read_csv("calificaciones_1000_estudiantes_con_id.csv")
 
-# Recalcular bono y nota final en el dataset
-df["Bono"] = np.where(df["Asistencia"] > 95, df["TP"] * 0.20, 0)
-df["TP_Modificado"] = df["TP"] + df["Bono"]
-df["Final_Usado"] = np.where(df["Asistencia"] < 80, 0, df["Final"])
-df["Nota_Final_Calculada"] = (
-    0.1333 * df["Parcial_1"] +
-    0.1333 * df["Parcial_2"] +
-    0.1333 * df["Parcial_3"] +
-    0.20 * df["TP_Modificado"] +
-    0.40 * df["Final_Usado"]
-).round(1)
+# Calcular promedio de TP y Final para simular en predicción
+tp_promedio = df["TP"].mean()
+final_promedio = df["Final"].mean()
 
-# Clasificación
+# Clasificación por nota
 def clasificar(nota):
     if nota >= 91:
         return "Excelente"
@@ -41,65 +32,63 @@ def clasificar(nota):
     else:
         return "Insuficiente"
 
-df["Clasificacion"] = df["Nota_Final_Calculada"].apply(clasificar)
-
 # Formulario de entrada
-st.sidebar.header("Ingrese los datos del estudiante")
+st.sidebar.header("🧾 Ingrese las calificaciones")
 
-parcial_1 = st.sidebar.slider("Parcial 1", 0.0, 100.0, 70.0)
-parcial_2 = st.sidebar.slider("Parcial 2", 0.0, 100.0, 70.0)
-parcial_3 = st.sidebar.slider("Parcial 3", 0.0, 100.0, 70.0)
-asistencia = st.sidebar.slider("Porcentaje de Asistencia", 0.0, 100.0, 85.0)
+parcial_1 = st.sidebar.number_input("Parcial 1", min_value=0.0, max_value=100.0, step=1.0)
+parcial_2 = st.sidebar.number_input("Parcial 2", min_value=0.0, max_value=100.0, step=1.0)
+parcial_3 = st.sidebar.number_input("Parcial 3", min_value=0.0, max_value=100.0, step=1.0)
 
-# Simular TP y Final con promedio general
-tp_promedio = df["TP"].mean()
-final_promedio = df["Final"].mean()
+asistencia = st.sidebar.selectbox("Asistencia (%)", options=[round(x, 1) for x in np.linspace(50, 100, 101)])
 
-# Calcular bono si aplica
-bono = tp_promedio * 0.20 if asistencia > 95 else 0
-tp_modificado = tp_promedio + bono
-final_usable = 0 if asistencia < 80 else final_promedio
+# Botón para predecir
+if st.sidebar.button("🔍 Predecir"):
 
-# Armar vector de entrada para el modelo
-X_nuevo = pd.DataFrame({
-    "Parcial_1": [parcial_1],
-    "Parcial_2": [parcial_2],
-    "Parcial_3": [parcial_3],
-    "Asistencia": [asistencia]
-})
+    # Calcular bono y final permitido
+    bono = tp_promedio * 0.20 if asistencia > 95 else 0
+    tp_modificado = tp_promedio + bono
+    final_usable = 0 if asistencia < 80 else final_promedio
 
-# Predicción
-nota_predicha = modelo.predict(X_nuevo)[0]
-clasificacion = clasificar(nota_predicha)
-
-# Mostrar resultado
-st.subheader("Resultados de la predicción")
-st.write(f"📝 **Nota final estimada:** {nota_predicha:.1f}")
-st.write(f"🏅 **Clasificación:** {clasificacion}")
-
-# Mostrar gráficos
-st.subheader("📊 Estadísticas del dataset")
-
-col1, col2 = st.columns(2)
-
-with col1:
-    st.write("Distribución de clasificaciones:")
-    clas_counts = df["Clasificacion"].value_counts().reindex(
-        ["Excelente", "Óptimo", "Satisfactorio", "Bueno", "Regular", "Insuficiente"]
+    # Calcular nota final manualmente con misma ponderación
+    nota_final = (
+        0.1333 * parcial_1 +
+        0.1333 * parcial_2 +
+        0.1333 * parcial_3 +
+        0.20 * tp_modificado +
+        0.40 * final_usable
     )
-    fig1, ax1 = plt.subplots()
-    clas_counts.plot(kind="bar", ax=ax1)
-    ax1.set_ylabel("Cantidad de estudiantes")
-    ax1.set_title("Clasificaciones")
-    st.pyplot(fig1)
+    nota_final = round(nota_final, 1)
+    clasificacion = clasificar(nota_final)
 
-with col2:
-    st.write("Distribución de notas finales:")
-    fig2, ax2 = plt.subplots()
-    sns.histplot(df["Nota_Final_Calculada"], bins=20, kde=True, ax=ax2)
-    ax2.set_title("Histograma de Notas Finales")
-    st.pyplot(fig2)
+    # Mostrar resultados
+    st.subheader("📈 Resultado de la Predicción")
+    st.write(f"🧪 **Trabajos Prácticos (TP):** {tp_modificado:.1f} puntos")
+    st.write(f"📝 **Examen Final:** {final_usable:.1f} puntos")
+    st.write(f"📊 **Nota Final Estimada:** {nota_final:.1f}")
+    st.write(f"🏅 **Clasificación:** {clasificacion}")
 
-# Mostrar matriz de confusión guardada (opcional)
-st.subheader("📌 Matriz de Confusión del Modelo")
-st.image("matriz_confusion.png", caption="Comparación de clasificaciones reales vs. predichas")
+    # Gráficos adicionales
+    st.subheader("📊 Estadísticas del Dataset")
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.write("Distribución de Clasificaciones:")
+        clas_counts = df["Clasificacion"].value_counts().reindex(
+            ["Excelente", "Óptimo", "Satisfactorio", "Bueno", "Regular", "Insuficiente"]
+        ).fillna(0)
+        fig1, ax1 = plt.subplots()
+        clas_counts.plot(kind="bar", ax=ax1)
+        ax1.set_ylabel("Cantidad de estudiantes")
+        ax1.set_title("Clasificaciones")
+        st.pyplot(fig1)
+
+    with col2:
+        st.write("Distribución de Notas Finales:")
+        fig2, ax2 = plt.subplots()
+        sns.histplot(df["Nota_Final_Calculada"], bins=20, kde=True, ax=ax2)
+        ax2.set_title("Histograma de Notas Finales")
+        st.pyplot(fig2)
+
+    st.subheader("🧮 Matriz de Confusión del Modelo")
+    st.image("matriz_confusion.png", caption="Comparación real vs. predicho")
+
