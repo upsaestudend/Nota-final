@@ -1,25 +1,25 @@
+import streamlit as st
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score, confusion_matrix
-import seaborn as sns
-import matplotlib.pyplot as plt
 import joblib
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-# Cargar dataset
+# Título de la app
+st.title("Predicción de la Nota Final del Estudiante")
+
+# Cargar el modelo
+modelo = joblib.load("modelo_entrenado.pkl")
+
+# Cargar dataset para estadísticas
 df = pd.read_csv("calificaciones_1000_estudiantes_con_id.csv")
 
-# Aplicar bono por asistencia > 95%
+# Recalcular bono y nota final en el dataset
 df["Bono"] = np.where(df["Asistencia"] > 95, df["TP"] * 0.20, 0)
 df["TP_Modificado"] = df["TP"] + df["Bono"]
-
-# Anular examen si asistencia < 80%
 df["Final_Usado"] = np.where(df["Asistencia"] < 80, 0, df["Final"])
-
-# Calcular nota final
 df["Nota_Final_Calculada"] = (
-    0.1333 * df["Parcial_1"] + 
+    0.1333 * df["Parcial_1"] +
     0.1333 * df["Parcial_2"] +
     0.1333 * df["Parcial_3"] +
     0.20 * df["TP_Modificado"] +
@@ -43,57 +43,63 @@ def clasificar(nota):
 
 df["Clasificacion"] = df["Nota_Final_Calculada"].apply(clasificar)
 
-# Variables predictoras y objetivo
-X = df[["Parcial_1", "Parcial_2", "Parcial_3", "Asistencia"]]
-y = df["Nota_Final_Calculada"]
+# Formulario de entrada
+st.sidebar.header("Ingrese los datos del estudiante")
 
-# Dividir en entrenamiento y prueba
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+parcial_1 = st.sidebar.slider("Parcial 1", 0.0, 100.0, 70.0)
+parcial_2 = st.sidebar.slider("Parcial 2", 0.0, 100.0, 70.0)
+parcial_3 = st.sidebar.slider("Parcial 3", 0.0, 100.0, 70.0)
+asistencia = st.sidebar.slider("Porcentaje de Asistencia", 0.0, 100.0, 85.0)
 
-# Entrenar modelo
-modelo = RandomForestRegressor(n_estimators=100, random_state=42)
-modelo.fit(X_train, y_train)
+# Simular TP y Final con promedio general
+tp_promedio = df["TP"].mean()
+final_promedio = df["Final"].mean()
+
+# Calcular bono si aplica
+bono = tp_promedio * 0.20 if asistencia > 95 else 0
+tp_modificado = tp_promedio + bono
+final_usable = 0 if asistencia < 80 else final_promedio
+
+# Armar vector de entrada para el modelo
+X_nuevo = pd.DataFrame({
+    "Parcial_1": [parcial_1],
+    "Parcial_2": [parcial_2],
+    "Parcial_3": [parcial_3],
+    "Asistencia": [asistencia]
+})
 
 # Predicción
-y_pred = modelo.predict(X_test)
+nota_predicha = modelo.predict(X_nuevo)[0]
+clasificacion = clasificar(nota_predicha)
 
-# Evaluación
-print("R²:", r2_score(y_test, y_pred))
-print("MAE:", mean_absolute_error(y_test, y_pred))
-print("RMSE:", np.sqrt(mean_squared_error(y_test, y_pred)))  # Aquí está la corrección
+# Mostrar resultado
+st.subheader("Resultados de la predicción")
+st.write(f"📝 **Nota final estimada:** {nota_predicha:.1f}")
+st.write(f"🏅 **Clasificación:** {clasificacion}")
 
-# Clasificación para matriz de confusión
-def clasificacion(nota):
-    if nota >= 91:
-        return "Excelente"
-    elif nota >= 81:
-        return "Óptimo"
-    elif nota >= 71:
-        return "Satisfactorio"
-    elif nota >= 61:
-        return "Bueno"
-    elif nota >= 51:
-        return "Regular"
-    else:
-        return "Insuficiente"
+# Mostrar gráficos
+st.subheader("📊 Estadísticas del dataset")
 
-y_test_clas = y_test.apply(clasificacion)
-y_pred_clas = pd.Series(y_pred).apply(clasificacion)
+col1, col2 = st.columns(2)
 
-# Matriz de confusión
-etiquetas = ["Excelente", "Óptimo", "Satisfactorio", "Bueno", "Regular", "Insuficiente"]
-cm = confusion_matrix(y_test_clas, y_pred_clas, labels=etiquetas)
+with col1:
+    st.write("Distribución de clasificaciones:")
+    clas_counts = df["Clasificacion"].value_counts().reindex(
+        ["Excelente", "Óptimo", "Satisfactorio", "Bueno", "Regular", "Insuficiente"]
+    )
+    fig1, ax1 = plt.subplots()
+    clas_counts.plot(kind="bar", ax=ax1)
+    ax1.set_ylabel("Cantidad de estudiantes")
+    ax1.set_title("Clasificaciones")
+    st.pyplot(fig1)
 
-# Graficar y guardar matriz de confusión
-plt.figure(figsize=(8,6))
-sns.heatmap(cm, annot=True, fmt="d", xticklabels=etiquetas, yticklabels=etiquetas, cmap="Blues")
-plt.xlabel("Predicción")
-plt.ylabel("Real")
-plt.title("Matriz de Confusión - Clasificación de Notas")
-plt.tight_layout()
-plt.savefig("matriz_confusion.png")
-plt.close()
+with col2:
+    st.write("Distribución de notas finales:")
+    fig2, ax2 = plt.subplots()
+    sns.histplot(df["Nota_Final_Calculada"], bins=20, kde=True, ax=ax2)
+    ax2.set_title("Histograma de Notas Finales")
+    st.pyplot(fig2)
 
-# Guardar modelo
-joblib.dump(modelo, "modelo_entrenado.pkl")
-print("✅ Modelo entrenado y guardado como modelo_entrenado.pkl")
+# Mostrar matriz de confusión guardada (opcional)
+st.subheader("📌 Matriz de Confusión del Modelo")
+st.image("matriz_confusion.png", caption="Comparación de clasificaciones reales vs. predichas")
