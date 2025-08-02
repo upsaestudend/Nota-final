@@ -43,26 +43,26 @@ def clasificar(nota):
 
 df["Clasificacion"] = df["Nota_Final_Calculada"].apply(clasificar)
 
-# Selección de variables
+# Variables predictoras y objetivo
 X = df[["Parcial_1", "Parcial_2", "Parcial_3", "Asistencia"]]
 y = df["Nota_Final_Calculada"]
 
-# División en train/test
+# Dividir en entrenamiento y prueba
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# Modelo
+# Entrenar modelo
 modelo = RandomForestRegressor(n_estimators=100, random_state=42)
 modelo.fit(X_train, y_train)
 
-# Predicciones
+# Predicción
 y_pred = modelo.predict(X_test)
 
 # Evaluación
 print("R²:", r2_score(y_test, y_pred))
 print("MAE:", mean_absolute_error(y_test, y_pred))
-print("RMSE:", mean_squared_error(y_test, y_pred, squared=False))
+print("RMSE:", np.sqrt(mean_squared_error(y_test, y_pred)))  # Aquí está la corrección
 
-# Convertir las notas a clasificaciones para matriz de confusión
+# Clasificación para matriz de confusión
 def clasificacion(nota):
     if nota >= 91:
         return "Excelente"
@@ -81,16 +81,19 @@ y_test_clas = y_test.apply(clasificacion)
 y_pred_clas = pd.Series(y_pred).apply(clasificacion)
 
 # Matriz de confusión
-cm = confusion_matrix(y_test_clas, y_pred_clas, labels=["Excelente", "Óptimo", "Satisfactorio", "Bueno", "Regular", "Insuficiente"])
+etiquetas = ["Excelente", "Óptimo", "Satisfactorio", "Bueno", "Regular", "Insuficiente"]
+cm = confusion_matrix(y_test_clas, y_pred_clas, labels=etiquetas)
+
+# Graficar y guardar matriz de confusión
 plt.figure(figsize=(8,6))
-sns.heatmap(cm, annot=True, fmt="d", xticklabels=["Excelente", "Óptimo", "Satisfactorio", "Bueno", "Regular", "Insuficiente"], yticklabels=["Excelente", "Óptimo", "Satisfactorio", "Bueno", "Regular", "Insuficiente"])
+sns.heatmap(cm, annot=True, fmt="d", xticklabels=etiquetas, yticklabels=etiquetas, cmap="Blues")
 plt.xlabel("Predicción")
 plt.ylabel("Real")
-plt.title("Matriz de Confusión (Clasificación de Notas)")
+plt.title("Matriz de Confusión - Clasificación de Notas")
 plt.tight_layout()
 plt.savefig("matriz_confusion.png")
 plt.close()
 
-# Guardar el modelo
+# Guardar modelo
 joblib.dump(modelo, "modelo_entrenado.pkl")
 print("✅ Modelo entrenado y guardado como modelo_entrenado.pkl")
