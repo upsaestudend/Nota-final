@@ -1,57 +1,96 @@
-import streamlit as st
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score, confusion_matrix
+import seaborn as sns
+import matplotlib.pyplot as plt
+import joblib
 
-# Función para calcular la nota final y clasificación
-def calcular_nota(asistencia, p1, p2, p3):
-    tp = 80.0
-    examen_final = 85.0
-    bono = 0
-    usar_examen = True
+# Cargar dataset
+df = pd.read_csv("calificaciones_1000_estudiantes_con_id.csv")
 
-    # Regla del bono
-    if asistencia > 95:
-        bono = round(tp * 0.20, 1)
-        tp += bono
-    elif asistencia < 80:
-        examen_final = 0.0
-        usar_examen = False
+# Aplicar bono por asistencia > 95%
+df["Bono"] = np.where(df["Asistencia"] > 95, df["TP"] * 0.20, 0)
+df["TP_Modificado"] = df["TP"] + df["Bono"]
 
-    # Cálculo de la nota final con ponderaciones
-    nota_final = 0.1333 * p1 + 0.1333 * p2 + 0.1333 * p3 + 0.20 * tp + 0.40 * examen_final
-    nota_final = round(nota_final, 1)
+# Anular examen si asistencia < 80%
+df["Final_Usado"] = np.where(df["Asistencia"] < 80, 0, df["Final"])
 
-    # Clasificación
-    if nota_final >= 91:
-        clasificacion = "Excelente"
-    elif nota_final >= 81:
-        clasificacion = "Óptimo"
-    elif nota_final >= 71:
-        clasificacion = "Satisfactorio"
-    elif nota_final >= 61:
-        clasificacion = "Bueno"
-    elif nota_final >= 51:
-        clasificacion = "Regular"
+# Calcular nota final
+df["Nota_Final_Calculada"] = (
+    0.1333 * df["Parcial_1"] + 
+    0.1333 * df["Parcial_2"] +
+    0.1333 * df["Parcial_3"] +
+    0.20 * df["TP_Modificado"] +
+    0.40 * df["Final_Usado"]
+).round(1)
+
+# Clasificación
+def clasificar(nota):
+    if nota >= 91:
+        return "Excelente"
+    elif nota >= 81:
+        return "Óptimo"
+    elif nota >= 71:
+        return "Satisfactorio"
+    elif nota >= 61:
+        return "Bueno"
+    elif nota >= 51:
+        return "Regular"
     else:
-        clasificacion = "Insuficiente"
+        return "Insuficiente"
 
-    return nota_final, clasificacion, bono, usar_examen
+df["Clasificacion"] = df["Nota_Final_Calculada"].apply(clasificar)
 
-# Interfaz de usuario con Streamlit
-st.title("📊 Predicción de Nota Final del Estudiante")
-st.markdown("Introduce las siguientes calificaciones (entre 0 y 100):")
+# Selección de variables
+X = df[["Parcial_1", "Parcial_2", "Parcial_3", "Asistencia"]]
+y = df["Nota_Final_Calculada"]
 
-p1 = st.number_input("Parcial 1", min_value=0.0, max_value=100.0, value=80.0)
-p2 = st.number_input("Parcial 2", min_value=0.0, max_value=100.0, value=85.0)
-p3 = st.number_input("Parcial 3", min_value=0.0, max_value=100.0, value=90.0)
-asistencia = st.number_input("Asistencia (%)", min_value=0.0, max_value=100.0, value=92.0)
+# División en train/test
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-if st.button("Calcular Nota Final"):
-    nota_final, clasificacion, bono, usar_examen = calcular_nota(asistencia, p1, p2, p3)
+# Modelo
+modelo = RandomForestRegressor(n_estimators=100, random_state=42)
+modelo.fit(X_train, y_train)
 
-    st.success(f"📌 Nota Final: **{nota_final}**")
-    st.info(f"🏅 Clasificación: **{clasificacion}**")
+# Predicciones
+y_pred = modelo.predict(X_test)
 
-    if bono > 0:
-        st.write(f"✅ Bono aplicado sobre trabajos prácticos: **+{bono} puntos**")
+# Evaluación
+print("R²:", r2_score(y_test, y_pred))
+print("MAE:", mean_absolute_error(y_test, y_pred))
+print("RMSE:", mean_squared_error(y_test, y_pred, squared=False))
 
-    if not usar_examen:
-        st.warning("⚠️ La asistencia es menor al 80%, no se consideró el examen final.")
+# Convertir las notas a clasificaciones para matriz de confusión
+def clasificacion(nota):
+    if nota >= 91:
+        return "Excelente"
+    elif nota >= 81:
+        return "Óptimo"
+    elif nota >= 71:
+        return "Satisfactorio"
+    elif nota >= 61:
+        return "Bueno"
+    elif nota >= 51:
+        return "Regular"
+    else:
+        return "Insuficiente"
+
+y_test_clas = y_test.apply(clasificacion)
+y_pred_clas = pd.Series(y_pred).apply(clasificacion)
+
+# Matriz de confusión
+cm = confusion_matrix(y_test_clas, y_pred_clas, labels=["Excelente", "Óptimo", "Satisfactorio", "Bueno", "Regular", "Insuficiente"])
+plt.figure(figsize=(8,6))
+sns.heatmap(cm, annot=True, fmt="d", xticklabels=["Excelente", "Óptimo", "Satisfactorio", "Bueno", "Regular", "Insuficiente"], yticklabels=["Excelente", "Óptimo", "Satisfactorio", "Bueno", "Regular", "Insuficiente"])
+plt.xlabel("Predicción")
+plt.ylabel("Real")
+plt.title("Matriz de Confusión (Clasificación de Notas)")
+plt.tight_layout()
+plt.savefig("matriz_confusion.png")
+plt.close()
+
+# Guardar el modelo
+joblib.dump(modelo, "modelo_entrenado.pkl")
+print("✅ Modelo entrenado y guardado como modelo_entrenado.pkl")
